@@ -34,6 +34,8 @@ MEMFCS analysis of B2M aggregation kinetics - quiescent growth in low salt pH 2.
 
 ## 4 Edge detection for Image Analysis - find the blobs
 Written to define the areas of interest in TIRF data prior to monitoring the kinetics of photobleaching. Still to be added area calculation, boundary drag, many other things.
+![image](https://github.com/user-attachments/assets/06d057d7-1804-417d-af0a-f0224d7df8a0)
+
 
 ## 5 Monte Carlo Simulation
 This was originally written and run in Igor Pro. Parameterisation requires some prior knowledge of the folding kinetics of the protein in question. The output data generates single molecule FRET data and includes a shot noise parameter which inlcudes jitter, dark noise and linker dynamics. The assumed R0 is 54A (FRET pair is Alexa 488 and Alex 594, separated by ~40aa)
