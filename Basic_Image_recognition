@@ -1,0 +1,84 @@
+# 1 Basic Image recognition
+
+---------------------------------------
+mount google drive before starting
+---------------------------------------
+data_dir = '/content/drive/MyDrive/Coins' #send to correct directory
+--------------------------------------------------------------------
+!pip install tensorflow #probs not necessary but will check and install updates if needed
+-----------------------------------------------------------------------------------------
+import tensorflow as tf  # splitting data sets into training and validation
+
+img_size = (224, 224)  # Standard size for transfer learning models
+batch_size = 32 # how many images processed together to balance out memory usage 
+
+train_ds = tf.keras.preprocessing.image_dataset_from_directory(
+    data_dir,
+    #labels='inferred',
+    validation_split=0.2, #20% data for validation, rest for training
+    subset="training",
+    seed=123, #makes sure the same split is used each run
+    image_size=img_size, #resizes all the images to the same size
+    batch_size=batch_size #loads images in batches of 32
+)
+
+val_ds = tf.keras.preprocessing.image_dataset_from_directory(
+    data_dir,
+    validation_split=0.2,
+    subset="validation",
+    seed=123,
+    image_size=img_size,
+    batch_size=batch_size
+)
+
+--------------------------------------------------------------------------------------------------
+
+base_model = tf.keras.applications.MobileNetV2(input_shape=img_size + (3,), #the 3 sets the RGB channels
+                                               include_top=False, #rxcludes the orginical claffications
+                                               weights='imagenet') #loads weights pre-trained on the imagenet databsase
+base_model.trainable = False  # Freeze base model - wont update while working
+
+model = tf.keras.Sequential([
+    base_model, # pre-trained model
+    tf.keras.layers.GlobalAveragePooling2D(), #Reduces each feature map to a single value by averaging, flattening the output from the base model and making it suitable for the dense layer. This helps reduce overfitting and the number of parameters
+    tf.keras.layers.Dense(1, activation='sigmoid')  # Binary classification - Adds a single neuron with a sigmoid activation, outputting a value between 0 and 1 for binary classification (2p coin vs. other)
+])
+
+model.compile(optimizer='adam', #Uses the Adam optimizer, which adapts the learning rate for each parameter, making training efficient and effective.
+              loss='binary_crossentropy', #Appropriate for binary classification tasks, measuring how well the model’s predictions match the true labels.
+              metrics=['accuracy']) #Tracks the accuracy of the model during training and evaluation.
+
+---------------------------------------------------------------------------------------------------
+
+history = model.fit(
+    train_ds, #speficiies the training dataset
+    validation_data=val_ds,
+    epochs=5  # Increase for better results
+)
+
+-------------------------------------------------------------------------------------------------------
+
+loss, accuracy = model.evaluate(val_ds)
+print(f"Validation accuracy: {accuracy:.2f}")
+
+---------------------------------------------------------------------------------------------------------
+
+from google.colab import files
+uploaded = files.upload()
+
+import numpy as np
+from tensorflow.keras.preprocessing import image
+
+img_path = list(uploaded.keys())[0]
+img = image.load_img(img_path, target_size=img_size)
+img_array = image.img_to_array(img)
+img_array = np.expand_dims(img_array, axis=0)
+img_array /= 255.0
+
+prediction = model.predict(img_array)
+if prediction[0][0] > 0.5:
+    print("Not 2p")
+else:
+    print("2p coin")
+
+----------------------------------------------------------------------------------------------------------
