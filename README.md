@@ -38,6 +38,9 @@ Written to define the areas of interest in TIRF data prior to monitoring the kin
 ## 5 Monte Carlo Simulation
 This was originally written and run in Igor Pro. Parameterisation requires some prior knowledge of the folding kinetics of the protein in question. The output data generates single molecule FRET data and includes a shot noise parameter which inlcudes jitter, dark noise and linker dynamics. The assumed R0 is 54A (FRET pair is Alexa 488 and Alex 594, separated by ~40aa)
 
+![image](https://github.com/user-attachments/assets/ef14fd53-f4ce-4988-882b-eb400d6f7006)
+
+
 ## 6 Just a list of the next things to add
   SPR - SCK
   SPR - MCK
