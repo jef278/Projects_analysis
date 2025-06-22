@@ -1,0 +1,625 @@
+#pragma rtGlobals=1		// Use modern global access method
+
+function runexp()
+
+variable/g areasize = 1e-6				//size of the detection volume (length of one side in metres)
+variable/g gridsize = 100				//size of the detection volume (number of squares down one side)
+variable/g samplevol = 0				//size of the sample volume (calculated later from the gridsize)
+wave obsarea 						//a wave to store the laser intensity values (3d gaussian)
+variable/g gsigthisint = 0				//the value of the green signal for this integration time
+variable/g rsigthisint = 0				//the value of the red signal for this integration time
+variable/g lastposx = 0				//the x coordinate of the molecule
+variable/g lastposy = 0				//the y coordinate of the molecule
+variable/g lastposz = 0				//the z coordinate of the molecule
+variable/g integrationtime				//the amount of time to cumulatively store signal for
+variable/g moleculefol = 0				//a flag to say if a molecule is folded
+variable/g flemratefg = 33333			//folded green emission rate
+variable/g flemratefr = 269697			//folded red emission rate
+variable/g flemrateug = 203030			//unfolded green emission rate
+variable/g flemrateur = 100000			//unfolded red emission rate
+variable/g numruns = 0				//tracking variable - the number of integration times simulated so far
+variable/g numints					//the number of integration times to simulate
+variable/g molleft = 1					//a flag to say if a molecule has left the sample volume (set to 1 so we start the simulation by generating a new molecule)
+variable/g includeshotnoise				//a flag to say if shot noise should be included
+make/o/n=(NumInts) DonorSig	= 0		//Used to store the Donor signal data	
+make/o/n=(Numints) AcceptorSig = 0	//Used to store the Acceptor signal data 
+variable/g histsize = 100				//Number of bins in the histogram
+variable/g thresh = 10					//threshold
+variable/g fractionfolded				//the fraction of the molecules that are folded
+variable/g numberfolded = 0			//a counter of the number of folded molecules
+variable/g numberunfolded = 0			//a counter of the number of unfolded molecules
+variable/g TimeDiffOneGridfolded = 0	//variable to hold time taken to diffuse one grid space
+variable/g TimeDiffOneGridunfolded = 0	//variable to hold time taken to diffuse one grid space
+variable/g kf0							//folding rate when no denaturant
+variable/g ku0						//unfolding rate when no denaturant
+variable/g ku							//unfolding rate taking account of denaturant concentration
+variable/g kf							//folding rate taking account of denaturant concentration
+variable/g guanidine					//guanidine concentration
+variable/g mf							//
+variable/g mu							//
+variable/g kb = 1.38e-23				// boltzmans constant
+variable/g R = 0.00831036				// gas constant
+variable/g temp						// the temperature in Kelvin
+variable/g viscosity = 1.307e-3			// viscosity of the solution
+variable/g rhfolded						// hydrodynamic radius of a folded molecule
+variable/g rhunfolded					// hydrodynamic radius of an unfolded molecule
+variable/g nresidues					// the number of residues in the molecule
+variable/g proboffolding				//probability of the molecule folding
+variable/g probofunfolding				//probability of the molecule unfolding
+variable/g includekinetics				//a flag to say if kinetics should be included
+variable/g diffratefolded = 0				// diffusion rate of a folded molecule (1.337e-10 m^2 per s in water at room temp)
+variable/g diffrateunfolded = 0			//diffusion rate of an unfolded molecule (9.22287e-11 m^2 per s in water at room temp)
+variable/g NumStepsPerIntTimefolded	//number of steps per integration time of a folded molecule (water/roomtemp)
+variable/g NumStepsPerIntTimeunfolded //number of steps per integration time of an unfolded molecule (water/roomtemp)
+variable/g timetaken					//the amount of time simulated so far this integration time
+
+
+samplevolume()						//call the function to generate the sample volume
+stepsperint()							//call the function to calculate the diffusion constants, 
+									//rate constants, probability of folding/unfolding etc
+
+variable c = numints/100				//c = the number of integration time steps that make up 1% of the total
+variable counter = 0					//
+variable percent = 0					//to keep track of how much of the simulation has been completed
+
+do
+	timetaken = 0					//time elapsed during this integration time is reset to zero
+	do
+		movemolecule()				//call the function to move the molecule in a random direction	
+		
+		storesignal()					//call the functrion to store the fluorescence signal for this step
+		
+		if (includekinetics == 1)		//if required then call the function to test if the 
+		kinetics()					//molecule should now fold/unfold
+		endif
+		
+		if (moleculefol == 1)			//calculate the time taken for this step and add it to the total for this integration time
+		timetaken += timediffonegridfolded
+		elseif (moleculefol == 0)
+		timetaken += timediffonegridunfolded
+		endif
+		
+	while (timetaken < integrationtime)	//when the time elapsed reaches the time for one integration then move on to the next integration time step
+	
+	if (includeshotnoise == 1)
+	GSigThisInt = pnoise(GSigThisInt)	// add or subtract a random amount of Poisson distributed noise
+	RSigThisInt = pnoise(RSigThisInt)	// add or subtract a random amount of Poisson distributed noise
+	endif
+	
+	DonorSig[NumRuns] = GSigThisInt		//Store the vals
+	AcceptorSig[NumRuns] = RSigThisInt	//Store the vals
+
+	GSigThisInt = 0 			//Reset the signals for the next integration time
+	RSigThisInt = 0
+	
+	numruns += 1
+	
+	counter += 1
+	if (counter >= c )				//print the percentage complete to keep track of how long this simulation has left
+	percent += 1
+	print percent,"% complete"
+	counter = 0
+	endif
+	
+while (numruns < numints)
+
+graphplotting()					//call the function to calculate and display the proximity ratio
+
+print numberfolded,"folded molecules were generated"
+print numberunfolded,"unfolded molecules were generated"
+
+end
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+function stepsperint()
+
+
+nvar numints						//////
+nvar gridsize						//////
+nvar samplevol					//////		
+nvar areasize						//////
+nvar integrationtime				//////
+nvar timediffonegridfolded			//////
+nvar timediffonegridunfolded		//////
+nvar diffratefolded					//////
+nvar diffrateunfolded				//////
+nvar NumStepsPerIntTimefolded	//////
+nvar NumStepsPerIntTimeunfolded	//////
+nvar temp						//////
+nvar kb							//////	
+nvar R							//////		initialize global variables used in this function
+nvar viscosity						//////
+nvar rhfolded						//////
+nvar	rhunfolded					//////
+nvar nresidues					//////
+nvar proboffolding					//////
+nvar probofunfolding				//////
+nvar ku							//////
+nvar kf							//////
+nvar lnku							//////
+nvar lnkf							//////
+nvar ku0							//////
+nvar kf0							//////
+nvar guanidine					//////
+nvar mf							//////
+nvar mu							//////
+nvar fractionfolded					//////
+nvar includeshotnoise				//////
+nvar includekinetics				//////
+
+
+rhfolded = 4.75*(nresidues^0.29)*10e-10									//hydrodynamic radius of a folded molecule
+diffratefolded = (kb*temp)/(6*pi*viscosity*rhfolded)							//diffusion rate of a folded molecule
+TimeDiffOneGridfolded = ((AreaSize / samplevol)^2)/(4*DiffRatefolded)		//time taken to go 1 grid space <x^2>/4D 
+NumStepsPerIntTimefolded = IntegrationTime / TimeDiffOneGridfolded 		//calc steps per integration time
+
+rhunfolded = 2.21*(nresidues^0.57)*10e-10								//hydrodynamic radius of an unfolded molecule
+diffrateunfolded = (kb*temp)/(6*pi*viscosity*rhunfolded)						//diffusion rate of an unfolded molecule
+TimeDiffOneGridunfolded = ((AreaSize / samplevol)^2)/(4*DiffRateunfolded)	//time taken to go 1 grid space <x^2>/4D 
+NumStepsPerIntTimeunfolded = IntegrationTime / TimeDiffOneGridunfolded 	//calc steps per integration time
+
+ku = ku0 * exp((-(-mu*guanidine))/(R * temp))		
+probofunfolding = 1 - ( exp(-timediffonegridfolded*ku))
+
+kf = kf0 * exp((-(mf*guanidine))/(R * temp))			
+proboffolding = 1 - (exp(-timediffonegridunfolded*kf))
+
+print ""
+print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+print "~~~~~~~~~~~~~~~~~~~~NEW SIMULATION~~~~~~~~~~~~~~~~~~~~~~"
+print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+print ""
+print "Temperature  =",temp,"Kelvin"
+print "Integration time =",integrationtime,"Seconds"
+print "Number of integration times =",numints
+print "Fraction native =",fractionfolded
+if (includeshotnoise == 1)
+print "shot noise is included"
+else 
+print "shot noise is not being simulated"
+endif
+if (includekinetics == 1)
+print "kinetics are being simulated"
+print "guanidine concentration is",guanidine
+print "folding rate constant =",kf,"per second"
+print "unfolding rate constant =",ku,"per second"
+else 
+print "kinetics are not being simulated"
+endif
+print ""
+print "0% complete"
+
+end
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+function samplevolume()
+
+nvar GridSize			//////		Initialise global variables used in this function
+nvar samplevol		//////
+
+samplevol = gridsize + ((gridsize/10)*2)
+Make/o/n=(GridSize,GridSize, GridSize) ObsArea 	// Simulate a grid 
+SetScale/P x (-GridSize/2),1,"", ObsArea			//Rescale the 3d grid wave to make calculation easier
+SetScale/P y (-GridSize/2),1,"", ObsArea			
+SetScale/P z (-GridSize/2),1,"", ObsArea			
+Variable HalfWidth = (GridSize/2 - 10)				//1/e width of the gaussian
+Variable Normal = 1								//Normalisation to have a value of 1 at the peak
+
+ObsArea =Normal * exp ( -(2*(x^2+y^2)/(HalfWidth^2)) -(2*(z^2)/(HalfWidth^2)))		//Generate the 3d gaussian
+
+SetScale/P x 1,1,"", ObsArea			//
+SetScale/P y 1,1,"", ObsArea			//Rescale the wave to something more convenient
+SetScale/P z 1,1,"", ObsArea			//
+
+// now add a layer of points around this gaussian with a value of zero - in this region molecules can move around but 
+//won't be detected, this means that molecules can now diffuse back into the detection volume
+
+InsertPoints 0,gridsize/10, ObsArea			//add in points with a value of zero at the beginning of the wave for x
+InsertPoints/M=1 0,gridsize/10, ObsArea	// y
+InsertPoints/M=2 0,gridsize/10, ObsArea	//and z
+
+InsertPoints GridSize+gridsize/10,gridsize/10, ObsArea			//add in blank points at the end of the wave, x
+InsertPoints/M=1  GridSize+gridsize/10,gridsize/10, ObsArea		//y
+InsertPoints/M=2  GridSize+gridsize/10,gridsize/10, ObsArea		//and z
+
+End
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+function movemolecule()
+
+nvar lastposx					//////
+nvar lastposy					//////
+nvar lastposz					//////
+nvar molleft					//////
+nvar samplevol				//////		Initialise global variables used in this function
+nvar NumStepsSimed			//////
+nvar NumStepsPerIntTime		//////
+nvar numruns					//////
+nvar NumCompIntTime		//////
+nvar fractionfolded				//////
+nvar moleculefol				//////
+nvar moleculebleached		//////
+nvar bleachprob				//////
+nvar numberfolded			//////
+nvar numberunfolded			//////
+
+If (MolLeft == 1) 				//Did the last moelcule leave the volume, OR is this a new simulation
+
+	moleculebleached = 0
+	bleachprob = 10
+
+	variable i = enoise(1)		//generate a random number between -1 and 1
+	i = (i^2)^(1/2)				//make sure the number is +ve
+
+	if (i <= fractionfolded)	
+		moleculefol = 1		//decide if the new molecule should be folded
+		numberfolded += 1
+		else
+		moleculefol = 0		//or unfolded
+		numberunfolded +=1
+	endif
+	
+		// now randomise the starting position of this new molecule
+	
+		LastPosX = round(sqrt((enoise(50))^2)) 	// Then want to start from a random location on 
+		LastPosY = round(sqrt((enoise(50))^2)) 	// one face (all faces are equal).
+		LastPosZ = 1
+		MolLeft = 0
+
+endif
+
+		Variable Direction 					//Choose which direction to move in
+		Direction =round(sqrt((enoise(26))^2))  	//Pick a random number from a uniform distribution
+
+													
+		//If (Direction == 0) then the molecule has not moved
+																						
+		If (Direction  == 1)	 				//Moves one space up
+				LastPosY = LastPosY + 1
+			ElseIf (Direction  == 2)			//Moves upper right diagonal
+				LastPosY = LastPosY + 1
+				LastPosX = LastPosX + 1
+			ElseIf (Direction  == 3)			//Moves right
+				LastPosX = LastPosX + 1
+			ElseIf (Direction  == 4) 			//Moves lower right
+				LastPosY = LastPosY - 1
+				LastPosX = LastPosX + 1
+			ElseIf (Direction  == 5)			//Moves down
+				LastPosY = LastPosY - 1
+			ElseIf (Direction  == 6) 			//Moves lower left
+				LastPosY = LastPosY - 1
+				LastPosX = LastPosX - 1
+			ElseIf (Direction  == 7)			//Moves  left
+				LastPosX = LastPosX - 1
+			ElseIf (Direction  == 8)			//Moves upper left
+				LastPosY = LastPosY + 1
+				LastPosX = LastPosX - 1
+			ElseIf (Direction  == 9)  			//Move a 3D direction
+				LastPosZ = LastPosZ + 1
+			ElseIf (Direction  == 10)  			//Move a 3D direction
+				LastPosZ = LastPosZ - 1
+			ElseIf (Direction  == 11)			//Move a 3D direction
+				LastPosY = LastPosY + 1
+				LastPosZ = LastPosZ + 1
+			ElseIf (Direction  == 12)			//Move a 3D direction
+				LastPosY = LastPosY + 1
+				LastPosX = LastPosX + 1
+				LastPosZ = LastPosZ + 1
+			ElseIf (Direction  == 13)			//Move a 3D direction
+				LastPosX = LastPosX + 1
+				LastPosZ = LastPosZ + 1
+			ElseIf (Direction  == 14) 			//Move a 3D direction
+				LastPosY = LastPosY - 1
+				LastPosX = LastPosX + 1
+				LastPosZ = LastPosZ + 1
+			ElseIf (Direction  == 15)			//Move a 3D direction
+				LastPosY = LastPosY - 1
+				LastPosZ = LastPosZ + 1
+			ElseIf (Direction  == 16) 			//Move a 3D direction
+				LastPosY = LastPosY - 1
+				LastPosX = LastPosX - 1
+				LastPosZ = LastPosZ + 1
+			ElseIf (Direction  == 17)			//Move a 3D direction
+				LastPosX = LastPosX - 1
+				LastPosZ = LastPosZ + 1
+			ElseIf (Direction  == 18)			//Move a 3D direction
+				LastPosY = LastPosY + 1
+				LastPosX = LastPosX - 1
+				LastPosZ = LastPosZ + 1
+			ElseIf (Direction  == 19)			//Move a 3D direction
+				LastPosY = LastPosY + 1
+				LastPosZ = LastPosZ - 1
+			ElseIf (Direction  == 20)			//Move a 3D direction
+				LastPosY = LastPosY + 1
+				LastPosX = LastPosX + 1
+				LastPosZ = LastPosZ - 1
+			ElseIf (Direction  == 21)			//Move a 3D direction
+				LastPosX = LastPosX + 1
+				LastPosZ = LastPosZ - 1
+			ElseIf (Direction  ==  22)     		//Move a 3D direction
+				LastPosY = LastPosY - 1
+				LastPosX = LastPosX + 1
+				LastPosZ = LastPosZ - 1
+			ElseIf (Direction  == 23)			//Move a 3D direction
+				LastPosY = LastPosY - 1
+				LastPosZ = LastPosZ - 1
+			ElseIf (Direction  == 24)   			 //Move a 3D direction
+				LastPosY = LastPosY - 1
+				LastPosX = LastPosX - 1
+				LastPosZ = LastPosZ - 1
+			ElseIf (Direction  == 25)  			 //Move a 3D direction
+				LastPosX = LastPosX - 1
+				LastPosZ = LastPosZ - 1
+			ElseIf (Direction  == 26)    			 //Move a 3D direction
+				LastPosY = LastPosY + 1
+				LastPosX = LastPosX - 1
+				LastPosZ = LastPosZ - 1
+		EndIf
+		
+			
+		If (LastPosY < 1)						//////
+			MolLeft = 1						//////
+		elseIf (LastPosX < 1)					//////
+			MolLeft = 1						//////
+		elseIf (LastPosZ < 1)					//////
+			MolLeft = 1						//////
+		elseIf (LastPosY > (samplevol -1))		//////		Test to see if moleucle has left the simulation grid
+			MolLeft = 1						//////
+		elseIf (LastPosX > (samplevol -1))		//////
+			MolLeft = 1						//////
+		elseIf (LastPosZ > (samplevol -1))		//////
+			MolLeft = 1						//////
+			
+		EndIf
+
+end
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+function storesignal()
+
+nvar moleculebleached			//////
+nvar GSigThisInt					//////
+nvar RSigThisInt					//////
+nvar LastPosX					//////
+nvar LastPosY					//////
+nvar LastPosZ					//////
+nvar GBleachORSingLabFlRate		//////
+nvar RBleachORSingLabFlRate		//////
+nvar integrationtime				//////		Initialise global variables used in this function
+nvar NumStepsPerIntTime			//////
+nvar MoleculeFol					//////
+nvar flemratefg					//////
+nvar FlEmRateFR					//////
+nvar FlEmRateUG				//////
+nvar FlEmRateUR					//////
+wave DonorSig					//////
+wave acceptorsig					//////
+nvar NumRuns					//////
+wave ObsArea					//////
+nvar numstepsperinttimefolded		//////
+nvar numstepsperinttimeunfolded	//////
+
+
+If (moleculefol == 1)		//test to see if the moelcule is folded, and store the signal
+	
+	GSigThisInt =  ObsArea[LastPosX][LastPosY][LastPosZ] * flemratefg * (IntegrationTime / NumStepsPerIntTimefolded) + GSigThisInt
+	RSigThisInt =  ObsArea[LastPosX][LastPosY][LastPosZ] * flemratefr * (IntegrationTime / NumStepsPerIntTimefolded)+ RSigThisInt							
+
+	else
+		
+	If (moleculefol ==  0)	//test to see if the moelcule is unfolded, and store the signal
+		
+		GSigThisInt =  ObsArea[LastPosX][LastPosY][LastPosZ] * flemrateug * (IntegrationTime / NumStepsPerIntTimeunfolded)+ GSigThisInt
+		RSigThisInt =  ObsArea[LastPosX][LastPosY][LastPosZ] * flemrateur * (IntegrationTime / NumStepsPerIntTimeunfolded)+ RSigThisInt
+		
+	endif
+endif
+
+end
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+function kinetics()
+
+nvar moleculefol				//////
+nvar probofunfolding			//////
+nvar timediffonegridfolded		//////
+nvar timediffonegridunfolded	//////
+nvar ku						//////
+nvar proboffolding				//////		initialise global variables used in this function
+nvar kf						//////
+
+
+	If (MoleculeFol == 1)
+			
+			variable a = sqrt((enoise(1)^2))
+			if (a<=probofunfolding)
+			moleculefol = 0
+			endif
+			
+	elseIf (MoleculeFol ==  0)
+		
+			variable b = sqrt((enoise(1)^2))
+			if (b<=proboffolding)
+			moleculefol = 1
+			endif
+	endif
+	
+end
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+function graphplotting()
+
+Wave DonorSig			////
+wave AcceptorSig 		////
+nvar histsize				////		initialize the global variables used in this function
+nvar Thresh				////
+nvar NumInts				////
+
+
+Print "Doing the FRET analysis...."
+
+make/o/n=(HistSize) FretHist		//Wave to hold the histogram
+make/o/n=(NumInts) summT		//wav to hold the coincident channel sums (Ia+Id)
+make/o/n=(NumInts) ensT			//Wave to hold the proximity rations Id / (Ia+Id)
+make/o/n=(NumInts) summTIndex	//Wave to index the sorting of the proximty ratios
+
+summT=0						//Intialise the waves
+ensT = 0
+summTIndex = 0
+
+Variable index = 1 				//Local housekeeping
+
+Do
+	SummT[index] = DonorSig[index]+AcceptorSig[index]  	//calulate a sum wave Ia + Id
+	EnsT[index] = AcceptorSig[index] / SummT[index]		//calualte the proximity ratio Ia / (Ia+Id)
+	index = index + 1
+While (index < NumInts)
+
+Histogram/B={-0.05,1/HistSize,HistSize+10} EnsT,  FretHist   //Display everything neatly
+
+Display FretHist											//display the fret histogram
+ModifyGraph mode=1,lsize=3,rgb=(43690,43690,43690)
+
+
+
+
+Makeindex summT, SummTIndex	// Sort the energys wave, based on the asceding sort of the summ wave
+indexsort SummTIndex, summT	
+indexsort SummTIndex, ensT	
+FindLevel/q summT, Thresh					//Find the threshold point
+DeletePoints 0, ceil(V_LevelX), summT, ensT	//Apply the threshold and delete everything else
+
+//AcceptorSig = -AcceptorSig		//just for the purposes of graph plotting - this is all done after the simulation is complete 
+								//and the FRET histogram has been drawn so should not affect anything else. 
+								//there will be a better way of doing this but this will do for now
+								
+Display AcceptorSig,DonorSig vs summTIndex
+ModifyGraph mode=1,rgb(DonorSig)=(0,52224,0)
+
+end
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+Function ButtonProc(ctrlName) : ButtonControl
+
+	String ctrlName
+	
+runexp()
+
+End
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////   &
+  // Platform=WindowsNT, IGORVersion=5.048
+Silent 101 // use | as bitwise or -- not comment.
+
+
+
+DefaultFont "Arial"
+MoveWindow/P 5.25,42.5,504.75,337.25
+OpenProc/W=(23.25,131.75,522.75,426.5)/J=11108441 "Proc0"
+MoveWindow/C 29.25,482.75,731.25,685.25
+control_panel()
+
+Window control_panel() : Panel
+	PauseUpdate; Silent 1		// building window...
+	NewPanel /W=(830,118,1209,444)
+	ModifyPanel frameStyle=3, frameInset=2
+	ShowTools
+	Button button0,pos={132,263},size={68,37},proc=ButtonProc,title="\\F'Arial Black'\\Z16\\K(0,26112,0)START"
+	Button button0,labelBack=(65535,65535,65535),fSize=14,fColor=(40960,65280,16384)
+	SetVariable setvar0,pos={7,37},size={223,18},title="Number of integration times  "
+	SetVariable setvar0,help={"65536 recommended"},labelBack=(32768,54528,65280)
+	SetVariable setvar0,font="Arial",limits={0,inf,0},value= numints,live= 1
+	SetVariable setvar1,pos={11,159},size={124,18},title="Fraction Native  "
+	SetVariable setvar1,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar1,limits={0,1,0},value= fractionfolded
+	SetVariable setvar2,pos={12,183},size={226,18},title="Denaturant concentration (Molar)"
+	SetVariable setvar2,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar2,limits={0,inf,0},value= guanidine
+	SetVariable setvar3,pos={9,62},size={220,18},title="Integration time (in seconds)"
+	SetVariable setvar3,help={"0.5 e^-3 seconds is recommended"}
+	SetVariable setvar3,labelBack=(32768,54528,65280),font="Arial"
+	SetVariable setvar3,limits={0,inf,0},value= integrationtime
+	SetVariable setvar4,pos={12,118},size={195,18},title="Temperature (in Kelvin)"
+	SetVariable setvar4,help={"at the moment choose either 283.15 (10C) 310.15 (37C) or 318.15 (45C)"}
+	SetVariable setvar4,labelBack=(65280,65280,32768),font="Arial"
+	SetVariable setvar4,limits={283.15,inf,0},value= temp
+	SetVariable setvar5,pos={13,96},size={217,18},title="No. of residues of the molecule  "
+	SetVariable setvar5,labelBack=(65280,65280,32768),font="Arial"
+	SetVariable setvar5,limits={0,inf,0},value= nresidues
+	SetVariable setvar6,pos={280,205},size={55,18},title="mf"
+	SetVariable setvar6,help={"the m value for the folding process"}
+	SetVariable setvar6,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar6,limits={-inf,inf,0},value= mf
+	SetVariable setvar7,pos={281,230},size={54,18},title="mu"
+	SetVariable setvar7,help={"the m value for the unfolding process"}
+	SetVariable setvar7,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar7,limits={-inf,inf,0},value= mu
+	SetVariable setvar8,pos={12,205},size={251,18},title="folding rate constant (per second)    "
+	SetVariable setvar8,help={"the folding rate constant when no denaturant is present"}
+	SetVariable setvar8,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar8,limits={0,inf,0},value= kf0
+	SetVariable setvar9,pos={13,228},size={250,18},title="unfolding rate contant (per second)  "
+	SetVariable setvar9,help={"the unfolding rate constant when no denaturant is present"}
+	SetVariable setvar9,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar9,limits={0,inf,0},value= ku0
+	CheckBox check0,pos={17,10},size={103,15},title="Include kinetics",font="Arial"
+	CheckBox check0,variable= includekinetics
+	CheckBox check1,pos={130,10},size={119,15},title="Include shot noise"
+	CheckBox check1,font="Arial",variable= includeshotnoise
+EndMacro
+           ‡  #pragma rtGlobals=1		// Use modern global access method.
+
+Window control_panel() : Panel
+	PauseUpdate; Silent 1		// building window...
+	NewPanel /W=(371,197,781,560)
+	ModifyPanel frameStyle=3, frameInset=2
+	ShowTools
+	Button button0,pos={120,292},size={68,37},proc=ButtonProc,title="\\F'Arial Black'\\Z16\\K(0,26112,0)START"
+	Button button0,labelBack=(65535,65535,65535),fSize=14,fColor=(40960,65280,16384)
+	SetVariable setvar0,pos={7,37},size={223,18},title="Number of integration times  "
+	SetVariable setvar0,help={"65536 recommended"},labelBack=(32768,54528,65280)
+	SetVariable setvar0,font="Arial",limits={0,inf,0},value= numints,live= 1
+	SetVariable setvar1,pos={11,159},size={124,18},title="Fraction Native  "
+	SetVariable setvar1,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar1,limits={0,1,0},value= fractionfolded
+	SetVariable setvar2,pos={12,183},size={226,18},title="Denaturant concentration (Molar)"
+	SetVariable setvar2,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar2,limits={0,inf,0},value= guanidine
+	SetVariable setvar3,pos={9,62},size={220,18},title="Integration time (in seconds)"
+	SetVariable setvar3,help={"0.5 e^-3 seconds is recommended"}
+	SetVariable setvar3,labelBack=(32768,54528,65280),font="Arial"
+	SetVariable setvar3,limits={0,inf,0},value= integrationtime
+	SetVariable setvar4,pos={13,135},size={195,18},title="Temperature (in Kelvin)"
+	SetVariable setvar4,help={"at the moment choose either 283.15 (10C) 310.15 (37C) or 318.15 (45C)"}
+	SetVariable setvar4,labelBack=(65280,65280,32768),font="Arial"
+	SetVariable setvar4,limits={283.15,inf,0},value= temp
+	SetVariable setvar5,pos={13,96},size={217,18},title="No. of residues of the molecule  "
+	SetVariable setvar5,labelBack=(65280,65280,32768),font="Arial"
+	SetVariable setvar5,limits={0,inf,0},value= nresidues
+	SetVariable setvar6,pos={280,205},size={55,18},title="mf"
+	SetVariable setvar6,help={"the m value for the folding process"}
+	SetVariable setvar6,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar6,limits={-inf,inf,0},value= mf
+	SetVariable setvar7,pos={281,230},size={54,18},title="mu"
+	SetVariable setvar7,help={"the m value for the unfolding process"}
+	SetVariable setvar7,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar7,limits={-inf,inf,0},value= mu
+	SetVariable setvar8,pos={12,205},size={251,18},title="folding rate constant (per second)    "
+	SetVariable setvar8,help={"the folding rate constant when no denaturant is present"}
+	SetVariable setvar8,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar8,limits={0,inf,0},value= kf0
+	SetVariable setvar9,pos={13,228},size={250,18},title="unfolding rate contant (per second)  "
+	SetVariable setvar9,help={"the unfolding rate constant when no denaturant is present"}
+	SetVariable setvar9,labelBack=(65280,32768,58880),font="Arial"
+	SetVariable setvar9,limits={0,inf,0},value= ku0
+	CheckBox check0,pos={17,10},size={103,15},title="Include kinetics",font="Arial"
+	CheckBox check0,variable= includekinetics
+	CheckBox check1,pos={130,10},size={119,15},title="Include shot noise"
+	CheckBox check1,font="Arial",variable= includeshotnoise
+EndMacro
