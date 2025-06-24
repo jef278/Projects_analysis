@@ -8,7 +8,7 @@ What's the difference 2p or not 2p? Upload an image and the model can give an ou
 ![image](https://github.com/user-attachments/assets/db3e387b-c706-451b-966e-f9eba38899ca)
 
 
-## 2 Straight FCS fitting method
+## 2A Straight FCS fitting method
 Old school FCS analysis, model contains parameters for triplet quenching, 1-3 species present. Applying Stokes-Einstein model and assuming spherical particles.
 
 ![image](https://github.com/user-attachments/assets/00c0452e-21b7-4cfe-96da-cef06a5839c0)
@@ -16,6 +16,10 @@ Old school FCS analysis, model contains parameters for triplet quenching, 1-3 sp
 For the test data use a fixed K2 of 121
 
 ![image](https://github.com/user-attachments/assets/ba2f4919-21d8-4f81-9ff2-d5ffd1c32d7f)
+
+##2A FCS Modelling - single and multi component
+Assumes a single triplet state, no bunching.
+
 
 
 ## 3 MEMFCS - using maximum entropy methods for fitting
@@ -53,6 +57,15 @@ This was originally written and run in Igor Pro. Parameterisation requires some 
   Mass Spec - intact mass calculator
 
   Histogram maker for teaching
+
+  Hidden Markov Modelling
+  
+  MSI analysis
+
+  Metabolomics 
+    PCA
+
+  HPLC and GC simulator
 
   Fluorescence polarisation
 
